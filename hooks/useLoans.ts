@@ -4,8 +4,10 @@ import { AppUser, Loan, LoanWithUser, Transaction } from '@/lib/types';
 import {
     addDoc,
     collection,
+    deleteDoc,
     doc,
     getDoc,
+    getDocs,
     onSnapshot,
     orderBy,
     query,
@@ -218,4 +220,75 @@ export function useTransactions(loanId: string) {
     }, [loanId]);
 
     return { transactions, loading };
+}
+
+// ============================================================
+// ADMIN CRUD OPERATIONS
+// ============================================================
+
+/**
+ * Delete a borrower and ALL their loans + transactions (cascade delete)
+ */
+export async function deleteBorrower(userId: string): Promise<void> {
+    // 1. Find all loans for this user
+    const loansRef = collection(db, 'Loans');
+    const loansQuery = query(loansRef, where('user_id', '==', userId));
+    const loansSnap = await getDocs(loansQuery);
+
+    // 2. For each loan, delete all transactions, then delete the loan
+    for (const loanDoc of loansSnap.docs) {
+        await deleteLoan(loanDoc.id);
+    }
+
+    // 3. Delete the user document
+    await deleteDoc(doc(db, 'Users', userId));
+}
+
+/**
+ * Delete a single loan and all its transactions
+ */
+export async function deleteLoan(loanId: string): Promise<void> {
+    // Delete all transactions for this loan
+    const txRef = collection(db, 'Transactions');
+    const txQuery = query(txRef, where('loan_id', '==', loanId));
+    const txSnap = await getDocs(txQuery);
+
+    for (const txDoc of txSnap.docs) {
+        await deleteDoc(doc(db, 'Transactions', txDoc.id));
+    }
+
+    // Delete the loan itself
+    await deleteDoc(doc(db, 'Loans', loanId));
+}
+
+/**
+ * Update loan fields (partial update)
+ */
+export async function updateLoan(
+    loanId: string,
+    updates: Partial<Omit<Loan, 'id'>>
+): Promise<void> {
+    const loanRef = doc(db, 'Loans', loanId);
+    await updateDoc(loanRef, updates);
+}
+
+/**
+ * Update user fields (partial update)
+ */
+export async function updateUser(
+    userId: string,
+    updates: Partial<Omit<AppUser, 'id'>>
+): Promise<void> {
+    const userRef = doc(db, 'Users', userId);
+    await updateDoc(userRef, updates);
+}
+
+/**
+ * Toggle loan status between active ↔ completed
+ */
+export async function toggleLoanStatus(loan: Loan): Promise<'active' | 'completed'> {
+    const newStatus = loan.status === 'active' ? 'completed' : 'active';
+    const loanRef = doc(db, 'Loans', loan.id);
+    await updateDoc(loanRef, { status: newStatus });
+    return newStatus;
 }
