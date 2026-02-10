@@ -1,4 +1,5 @@
 import BorrowerCard from '@/components/BorrowerCard';
+import ConfirmModal from '@/components/ConfirmModal';
 import RecordPaymentModal from '@/components/RecordPaymentModal';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
@@ -9,7 +10,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-    Alert,
     FlatList,
     RefreshControl,
     StyleSheet,
@@ -26,6 +26,7 @@ export default function AdminDashboard() {
     const [selectedLoan, setSelectedLoan] = useState<LoanWithUser | null>(null);
     const [paymentModalVisible, setPaymentModalVisible] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [logoutModalVisible, setLogoutModalVisible] = useState(false);
     const router = useRouter();
     const penaltiesApplied = useRef(false);
 
@@ -64,10 +65,7 @@ export default function AdminDashboard() {
     };
 
     const handleLogout = () => {
-        Alert.alert('Logout', 'Are you sure you want to sign out?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Sign Out', style: 'destructive', onPress: logout },
-        ]);
+        setLogoutModalVisible(true);
     };
 
     // Summary stats
@@ -188,6 +186,21 @@ export default function AdminDashboard() {
             >
                 <Ionicons name="add" size={30} color={Colors.white} />
             </TouchableOpacity>
+
+            {/* Logout Confirm */}
+            <ConfirmModal
+                visible={logoutModalVisible}
+                title="Sign Out"
+                message="Are you sure you want to sign out?"
+                confirmLabel="Sign Out"
+                danger
+                icon="log-out-outline"
+                onConfirm={() => {
+                    setLogoutModalVisible(false);
+                    logout();
+                }}
+                onCancel={() => setLogoutModalVisible(false)}
+            />
         </View>
     );
 }

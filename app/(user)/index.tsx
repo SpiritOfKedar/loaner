@@ -1,3 +1,4 @@
+import ConfirmModal from '@/components/ConfirmModal';
 import LoanDetailView from '@/components/LoanDetailView';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
@@ -5,9 +6,8 @@ import { useUserLoans } from '@/hooks/useLoans';
 import { getDueStatus } from '@/lib/penalty';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import {
-    Alert,
     ScrollView,
     StyleSheet,
     Text,
@@ -19,12 +19,10 @@ export default function UserDashboard() {
     const { appUser, logout } = useAuth();
     const { loans, loading, error } = useUserLoans(appUser?.id || '');
     const router = useRouter();
+    const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
     const handleLogout = () => {
-        Alert.alert('Logout', 'Are you sure you want to sign out?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Sign Out', style: 'destructive', onPress: logout },
-        ]);
+        setLogoutModalVisible(true);
     };
 
     return (
@@ -148,6 +146,21 @@ export default function UserDashboard() {
                     })
                 )}
             </ScrollView>
+
+            {/* Logout Confirm */}
+            <ConfirmModal
+                visible={logoutModalVisible}
+                title="Sign Out"
+                message="Are you sure you want to sign out?"
+                confirmLabel="Sign Out"
+                danger
+                icon="log-out-outline"
+                onConfirm={() => {
+                    setLogoutModalVisible(false);
+                    logout();
+                }}
+                onCancel={() => setLogoutModalVisible(false)}
+            />
         </View>
     );
 }

@@ -1,23 +1,38 @@
+import ConfirmModal from '@/components/ConfirmModal';
+import EditLoanModal from '@/components/EditLoanModal';
 import LoanDetailView from '@/components/LoanDetailView';
 import RecordPaymentModal from '@/components/RecordPaymentModal';
+import SendReminderModal from '@/components/SendReminderModal';
 import TransactionList from '@/components/TransactionList';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/constants/theme';
-import { useTransactions } from '@/hooks/useLoans';
+import {
+    deleteBorrower,
+    deleteLoan,
+    toggleLoanStatus,
+    useTransactions,
+} from '@/hooks/useLoans';
 import { db } from '@/lib/firebase';
-import { buildReminderMessage, openSMS, openWhatsApp } from '@/lib/messaging';
 import { AppUser, Loan, LoanWithUser } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from 'react-native';
+
+type ModalType =
+    | 'none'
+    | 'payment'
+    | 'reminder'
+    | 'edit'
+    | 'deleteLoan'
+    | 'deleteBorrower'
+    | 'toggleStatus';
 
 export default function LoanDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -26,45 +41,91 @@ export default function LoanDetailScreen() {
     const [loan, setLoan] = useState<Loan | null>(null);
     const [user, setUser] = useState<AppUser | null>(null);
     const [loading, setLoading] = useState(true);
-    const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+    const [activeModal, setActiveModal] = useState<ModalType>('none');
     const [activeTab, setActiveTab] = useState<'details' | 'history'>('details');
+    const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
+    const [statusMessage, setStatusMessage] = useState<{
+        type: 'success' | 'error';
+        text: string;
+    } | null>(null);
+
+    const fetchLoan = async () => {
+        if (!id) return;
+        try {
+            const loanDoc = await getDoc(doc(db, 'Loans', id));
+            if (loanDoc.exists()) {
+                const loanData = { id: loanDoc.id, ...loanDoc.data() } as Loan;
+                setLoan(loanData);
+
+                const userDoc = await getDoc(doc(db, 'Users', loanData.user_id));
+                if (userDoc.exists()) {
+                    setUser({ id: userDoc.id, ...userDoc.data() } as AppUser);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching loan:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchLoan = async () => {
-            if (!id) return;
-            try {
-                const loanDoc = await getDoc(doc(db, 'Loans', id));
-                if (loanDoc.exists()) {
-                    const loanData = { id: loanDoc.id, ...loanDoc.data() } as Loan;
-                    setLoan(loanData);
-
-                    const userDoc = await getDoc(doc(db, 'Users', loanData.user_id));
-                    if (userDoc.exists()) {
-                        setUser({ id: userDoc.id, ...userDoc.data() } as AppUser);
-                    }
-                }
-            } catch (error) {
-                console.error('Error fetching loan:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
         fetchLoan();
     }, [id]);
 
-    const handleRemind = () => {
-        if (!user || !loan) return;
-        const message = buildReminderMessage(user, loan);
-        Alert.alert('Send Reminder', `Remind ${user.name}?`, [
-            { text: 'Cancel', style: 'cancel' },
-            { text: '💬 SMS', onPress: () => openSMS(user.mobile_number, message) },
-            {
-                text: '📱 WhatsApp',
-                onPress: () => openWhatsApp(user.mobile_number, message),
-            },
-        ]);
+    // ---- Admin Actions ----
+
+    const handleDeleteLoan = async () => {
+        if (!loan) return;
+        setActionLoading(true);
+        try {
+            await deleteLoan(loan.id);
+            setActiveModal('none');
+            router.back();
+        } catch (err: any) {
+            setStatusMessage({ type: 'error', text: err.message || 'Failed to delete loan.' });
+            setActiveModal('none');
+        } finally {
+            setActionLoading(false);
+        }
     };
+
+    const handleDeleteBorrower = async () => {
+        if (!user) return;
+        setActionLoading(true);
+        try {
+            await deleteBorrower(user.id);
+            setActiveModal('none');
+            router.back();
+        } catch (err: any) {
+            setStatusMessage({ type: 'error', text: err.message || 'Failed to delete borrower.' });
+            setActiveModal('none');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleToggleStatus = async () => {
+        if (!loan) return;
+        setActionLoading(true);
+        try {
+            const newStatus = await toggleLoanStatus(loan);
+            setLoan({ ...loan, status: newStatus });
+            setStatusMessage({
+                type: 'success',
+                text: `Loan marked as ${newStatus}.`,
+            });
+            setActiveModal('none');
+        } catch (err: any) {
+            setStatusMessage({ type: 'error', text: err.message || 'Failed to update status.' });
+            setActiveModal('none');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    // ---- Rendering ----
 
     if (loading || !loan) {
         return (
@@ -85,6 +146,8 @@ export default function LoanDetailScreen() {
         },
     };
 
+    const isActive = loan.status === 'active';
+
     return (
         <View style={styles.container}>
             {/* User Header */}
@@ -101,7 +164,142 @@ export default function LoanDetailScreen() {
                         <Text style={styles.phoneText}>{user?.mobile_number || 'N/A'}</Text>
                     </View>
                 </View>
+
+                {/* Admin Menu Toggle */}
+                <TouchableOpacity
+                    style={styles.menuButton}
+                    onPress={() => setAdminMenuOpen(!adminMenuOpen)}
+                >
+                    <Ionicons
+                        name={adminMenuOpen ? 'close' : 'ellipsis-vertical'}
+                        size={22}
+                        color={Colors.textMuted}
+                    />
+                </TouchableOpacity>
             </View>
+
+            {/* Admin Actions Menu (dropdown) */}
+            {adminMenuOpen && (
+                <View style={styles.adminMenu}>
+                    <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => {
+                            setAdminMenuOpen(false);
+                            setActiveModal('edit');
+                        }}
+                    >
+                        <Ionicons name="create-outline" size={18} color={Colors.accent} />
+                        <Text style={[styles.menuItemText, { color: Colors.accent }]}>
+                            Edit Details
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => {
+                            setAdminMenuOpen(false);
+                            setActiveModal('toggleStatus');
+                        }}
+                    >
+                        <Ionicons
+                            name={isActive ? 'checkmark-done-outline' : 'play-outline'}
+                            size={18}
+                            color={isActive ? Colors.success : Colors.warning}
+                        />
+                        <Text
+                            style={[
+                                styles.menuItemText,
+                                { color: isActive ? Colors.success : Colors.warning },
+                            ]}
+                        >
+                            {isActive ? 'Close Loan' : 'Reopen Loan'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.menuDivider} />
+
+                    <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => {
+                            setAdminMenuOpen(false);
+                            setActiveModal('deleteLoan');
+                        }}
+                    >
+                        <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                        <Text style={[styles.menuItemText, { color: Colors.danger }]}>
+                            Delete This Loan
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => {
+                            setAdminMenuOpen(false);
+                            setActiveModal('deleteBorrower');
+                        }}
+                    >
+                        <Ionicons name="person-remove-outline" size={18} color={Colors.danger} />
+                        <Text style={[styles.menuItemText, { color: Colors.danger }]}>
+                            Delete Borrower & All Loans
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Status Message */}
+            {statusMessage && (
+                <View
+                    style={[
+                        styles.statusBanner,
+                        {
+                            backgroundColor:
+                                statusMessage.type === 'success'
+                                    ? 'rgba(34,197,94,0.15)'
+                                    : 'rgba(239,68,68,0.15)',
+                        },
+                    ]}
+                >
+                    <Ionicons
+                        name={
+                            statusMessage.type === 'success'
+                                ? 'checkmark-circle'
+                                : 'alert-circle'
+                        }
+                        size={16}
+                        color={
+                            statusMessage.type === 'success'
+                                ? Colors.success
+                                : Colors.danger
+                        }
+                    />
+                    <Text
+                        style={[
+                            styles.statusText,
+                            {
+                                color:
+                                    statusMessage.type === 'success'
+                                        ? Colors.success
+                                        : Colors.danger,
+                            },
+                        ]}
+                    >
+                        {statusMessage.text}
+                    </Text>
+                    <TouchableOpacity onPress={() => setStatusMessage(null)}>
+                        <Ionicons name="close" size={16} color={Colors.textMuted} />
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Loan Status Badge */}
+            {!isActive && (
+                <View style={styles.closedBadge}>
+                    <Ionicons name="checkmark-done" size={16} color={Colors.success} />
+                    <Text style={styles.closedBadgeText}>
+                        LOAN {loan.status.toUpperCase()}
+                    </Text>
+                </View>
+            )}
 
             {/* Tab Switcher */}
             <View style={styles.tabBar}>
@@ -155,32 +353,88 @@ export default function LoanDetailScreen() {
             {/* Bottom Actions */}
             <View style={styles.bottomActions}>
                 <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => setPaymentModalVisible(true)}
+                    style={[styles.actionButton, !isActive && styles.disabledAction]}
+                    onPress={() => setActiveModal('payment')}
+                    disabled={!isActive}
                 >
                     <Ionicons name="cash-outline" size={20} color={Colors.white} />
                     <Text style={styles.actionButtonText}>Record Payment</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.remindAction} onPress={handleRemind}>
+                <TouchableOpacity
+                    style={styles.remindAction}
+                    onPress={() => setActiveModal('reminder')}
+                >
                     <Ionicons name="notifications-outline" size={20} color={Colors.warning} />
                 </TouchableOpacity>
             </View>
 
+            {/* ---- MODALS ---- */}
+
             {/* Payment Modal */}
             <RecordPaymentModal
-                visible={paymentModalVisible}
+                visible={activeModal === 'payment'}
                 loanWithUser={loanWithUser}
-                onClose={() => setPaymentModalVisible(false)}
-                onSuccess={() => {
-                    // Re-fetch loan data
-                    const fetchLoan = async () => {
-                        const loanDoc = await getDoc(doc(db, 'Loans', id!));
-                        if (loanDoc.exists()) {
-                            setLoan({ id: loanDoc.id, ...loanDoc.data() } as Loan);
-                        }
-                    };
-                    fetchLoan();
-                }}
+                onClose={() => setActiveModal('none')}
+                onSuccess={fetchLoan}
+            />
+
+            {/* Reminder Modal */}
+            <SendReminderModal
+                visible={activeModal === 'reminder'}
+                user={user}
+                loan={loan}
+                onClose={() => setActiveModal('none')}
+            />
+
+            {/* Edit Modal */}
+            <EditLoanModal
+                visible={activeModal === 'edit'}
+                loan={loan}
+                user={user}
+                onClose={() => setActiveModal('none')}
+                onSuccess={fetchLoan}
+            />
+
+            {/* Delete Loan Confirm */}
+            <ConfirmModal
+                visible={activeModal === 'deleteLoan'}
+                title="Delete Loan"
+                message={`This will permanently delete this loan and all ${transactions.length} payment records. This cannot be undone.`}
+                confirmLabel="Delete Loan"
+                danger
+                loading={actionLoading}
+                icon="trash-outline"
+                onConfirm={handleDeleteLoan}
+                onCancel={() => setActiveModal('none')}
+            />
+
+            {/* Delete Borrower Confirm */}
+            <ConfirmModal
+                visible={activeModal === 'deleteBorrower'}
+                title="Delete Borrower"
+                message={`This will permanently delete ${user?.name || 'this borrower'} and ALL their loans + payment records. This cannot be undone.`}
+                confirmLabel="Delete Everything"
+                danger
+                loading={actionLoading}
+                icon="person-remove-outline"
+                onConfirm={handleDeleteBorrower}
+                onCancel={() => setActiveModal('none')}
+            />
+
+            {/* Toggle Status Confirm */}
+            <ConfirmModal
+                visible={activeModal === 'toggleStatus'}
+                title={isActive ? 'Close Loan' : 'Reopen Loan'}
+                message={
+                    isActive
+                        ? `Mark this loan as completed? It will be removed from the active dashboard.`
+                        : `Reopen this loan? It will appear on the active dashboard again.`
+                }
+                confirmLabel={isActive ? 'Close Loan' : 'Reopen Loan'}
+                loading={actionLoading}
+                icon={isActive ? 'checkmark-done-outline' : 'play-outline'}
+                onConfirm={handleToggleStatus}
+                onCancel={() => setActiveModal('none')}
             />
         </View>
     );
@@ -243,6 +497,60 @@ const styles = StyleSheet.create({
         fontSize: FontSize.sm,
         color: Colors.textMuted,
     },
+    menuButton: {
+        padding: Spacing.sm,
+        borderRadius: BorderRadius.full,
+    },
+    adminMenu: {
+        backgroundColor: Colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.surfaceBorder + '30',
+        paddingHorizontal: Spacing.lg,
+        paddingVertical: Spacing.sm,
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.md,
+        paddingVertical: Spacing.md,
+    },
+    menuItemText: {
+        fontSize: FontSize.md,
+        fontWeight: '600',
+    },
+    menuDivider: {
+        height: 1,
+        backgroundColor: Colors.surfaceBorder + '40',
+        marginVertical: Spacing.xs,
+    },
+    statusBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+        padding: Spacing.md,
+        marginHorizontal: Spacing.lg,
+        marginTop: Spacing.sm,
+        borderRadius: BorderRadius.md,
+    },
+    statusText: {
+        flex: 1,
+        fontSize: FontSize.sm,
+        fontWeight: '600',
+    },
+    closedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        backgroundColor: Colors.successBg,
+        paddingVertical: Spacing.sm,
+    },
+    closedBadgeText: {
+        fontSize: FontSize.sm,
+        fontWeight: '700',
+        color: Colors.success,
+        letterSpacing: 0.5,
+    },
     tabBar: {
         flexDirection: 'row',
         backgroundColor: Colors.surface,
@@ -293,6 +601,9 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.primary,
         paddingVertical: Spacing.lg,
         borderRadius: BorderRadius.md,
+    },
+    disabledAction: {
+        opacity: 0.5,
     },
     actionButtonText: {
         fontSize: FontSize.md,

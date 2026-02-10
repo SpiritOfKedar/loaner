@@ -5,7 +5,6 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -21,19 +20,20 @@ export default function LoginScreen() {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const { login } = useAuth();
     const router = useRouter();
 
     const handleLogin = async () => {
         if (!email.trim() || !password.trim()) {
-            Alert.alert('Missing Fields', 'Please enter both email and password.');
+            setErrorMessage('Please enter both email and password.');
             return;
         }
 
         setLoading(true);
+        setErrorMessage(null);
         try {
             await login(email.trim(), password);
-            // Navigation is handled by the auth guard in _layout.tsx
         } catch (error: any) {
             let message = 'Login failed. Please try again.';
             if (error.code === 'auth/user-not-found') {
@@ -45,7 +45,7 @@ export default function LoginScreen() {
             } else if (error.code === 'auth/too-many-requests') {
                 message = 'Too many attempts. Please try again later.';
             }
-            Alert.alert('Login Failed', message);
+            setErrorMessage(message);
         } finally {
             setLoading(false);
         }
@@ -115,6 +115,14 @@ export default function LoginScreen() {
                             </TouchableOpacity>
                         </View>
                     </View>
+
+                    {/* Error Message */}
+                    {errorMessage && (
+                        <View style={styles.errorBanner}>
+                            <Ionicons name="alert-circle" size={18} color={Colors.danger} />
+                            <Text style={styles.errorText}>{errorMessage}</Text>
+                        </View>
+                    )}
 
                     {/* Login Button */}
                     <TouchableOpacity
@@ -256,5 +264,20 @@ const styles = StyleSheet.create({
     infoText: {
         fontSize: FontSize.sm,
         color: Colors.textMuted,
+    },
+    errorBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+        backgroundColor: Colors.dangerBg,
+        padding: Spacing.md,
+        borderRadius: BorderRadius.md,
+        marginBottom: Spacing.md,
+    },
+    errorText: {
+        flex: 1,
+        fontSize: FontSize.sm,
+        fontWeight: '600',
+        color: Colors.danger,
     },
 });
