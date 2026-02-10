@@ -6,7 +6,6 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -14,7 +13,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 
 interface RecordPaymentModalProps {
@@ -32,36 +31,57 @@ export default function RecordPaymentModal({
 }: RecordPaymentModalProps) {
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
+    const [statusMessage, setStatusMessage] = useState<{
+        type: 'success' | 'error';
+        text: string;
+    } | null>(null);
 
     const handleSubmit = async () => {
         if (!loanWithUser) return;
 
         const parsedAmount = parseFloat(amount);
         if (isNaN(parsedAmount) || parsedAmount <= 0) {
-            Alert.alert('Invalid Amount', 'Please enter a valid payment amount.');
+            setStatusMessage({ type: 'error', text: 'Please enter a valid payment amount.' });
             return;
         }
 
         if (parsedAmount > loanWithUser.current_due_amount) {
-            Alert.alert(
-                'Amount Too High',
-                `Payment exceeds the current due amount of ${formatCurrency(loanWithUser.current_due_amount)}.`
-            );
+            setStatusMessage({
+                type: 'error',
+                text: `Payment exceeds the current due of ${formatCurrency(loanWithUser.current_due_amount)}.`,
+            });
             return;
         }
 
         setLoading(true);
+        setStatusMessage(null);
         try {
             await recordPayment(loanWithUser.id, parsedAmount);
-            Alert.alert('✅ Payment Recorded', `${formatCurrency(parsedAmount)} recorded for ${loanWithUser.user.name}.`);
+            setStatusMessage({
+                type: 'success',
+                text: `${formatCurrency(parsedAmount)} recorded for ${loanWithUser.user.name}.`,
+            });
             setAmount('');
             onSuccess();
-            onClose();
+            // Auto-close after short delay to show success
+            setTimeout(() => {
+                setStatusMessage(null);
+                onClose();
+            }, 1200);
         } catch (error: any) {
-            Alert.alert('Error', error.message || 'Failed to record payment.');
+            setStatusMessage({
+                type: 'error',
+                text: error.message || 'Failed to record payment.',
+            });
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleClose = () => {
+        setStatusMessage(null);
+        setAmount('');
+        onClose();
     };
 
     const setPresetAmount = () => {
@@ -71,6 +91,7 @@ export default function RecordPaymentModal({
     };
 
     if (!loanWithUser) return null;
+
 
     return (
         <Modal visible={visible} animationType="slide" transparent>
@@ -85,10 +106,52 @@ export default function RecordPaymentModal({
                     {/* Header */}
                     <View style={styles.header}>
                         <Text style={styles.title}>Record Payment</Text>
-                        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                        <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                             <Ionicons name="close" size={24} color={Colors.textMuted} />
                         </TouchableOpacity>
                     </View>
+
+                    {/* Status Message */}
+                    {statusMessage && (
+                        <View
+                            style={[
+                                styles.statusBanner,
+                                {
+                                    backgroundColor:
+                                        statusMessage.type === 'success'
+                                            ? 'rgba(34,197,94,0.15)'
+                                            : 'rgba(239,68,68,0.15)',
+                                },
+                            ]}
+                        >
+                            <Ionicons
+                                name={
+                                    statusMessage.type === 'success'
+                                        ? 'checkmark-circle'
+                                        : 'alert-circle'
+                                }
+                                size={18}
+                                color={
+                                    statusMessage.type === 'success'
+                                        ? Colors.success
+                                        : Colors.danger
+                                }
+                            />
+                            <Text
+                                style={[
+                                    styles.statusText,
+                                    {
+                                        color:
+                                            statusMessage.type === 'success'
+                                                ? Colors.success
+                                                : Colors.danger,
+                                    },
+                                ]}
+                            >
+                                {statusMessage.text}
+                            </Text>
+                        </View>
+                    )}
 
                     {/* Borrower Info */}
                     <View style={styles.borrowerInfo}>
@@ -328,6 +391,19 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.primary,
         paddingVertical: Spacing.lg,
         borderRadius: BorderRadius.md,
+    },
+    statusBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+        padding: Spacing.md,
+        borderRadius: BorderRadius.md,
+        marginBottom: Spacing.md,
+    },
+    statusText: {
+        flex: 1,
+        fontSize: FontSize.sm,
+        fontWeight: '600',
     },
     submitButtonDisabled: {
         opacity: 0.6,
