@@ -156,9 +156,37 @@ export async function applyPenaltyToLoan(loan: Loan): Promise<boolean> {
     await updateDoc(loanRef, {
         current_due_amount: penalty.newDueAmount,
         missed_installments_count: penalty.newMissedCount,
+        next_due_date: Timestamp.fromDate(penalty.newNextDueDate),
     });
 
     return true;
+}
+
+/**
+ * Create a new user in Firestore
+ */
+export async function createUser(userData: Omit<AppUser, 'id'>): Promise<string> {
+    const usersRef = collection(db, 'Users');
+    const docRef = await addDoc(usersRef, {
+        ...userData,
+        role: userData.role || 'user',
+    });
+    return docRef.id;
+}
+
+/**
+ * Create a new loan in Firestore
+ */
+export async function createLoan(loanData: Omit<Loan, 'id'>): Promise<string> {
+    const loansRef = collection(db, 'Loans');
+    const docRef = await addDoc(loansRef, {
+        ...loanData,
+        next_due_date: loanData.next_due_date || Timestamp.now(),
+        status: loanData.status || 'active',
+        paid_installments_count: loanData.paid_installments_count || 0,
+        missed_installments_count: loanData.missed_installments_count || 0,
+    });
+    return docRef.id;
 }
 
 /**

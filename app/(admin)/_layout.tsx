@@ -31,6 +31,13 @@ export default function AdminLayout() {
                     headerShown: true,
                 }}
             />
+            <Stack.Screen
+                name="add-borrower"
+                options={{
+                    title: 'Add New Borrower',
+                    headerShown: true,
+                }}
+            />
         </Stack>
     );
 }

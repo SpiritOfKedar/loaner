@@ -7,7 +7,7 @@ import { formatCurrency } from '@/lib/penalty';
 import { LoanWithUser } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
     Alert,
     FlatList,
@@ -27,10 +27,12 @@ export default function AdminDashboard() {
     const [paymentModalVisible, setPaymentModalVisible] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const router = useRouter();
+    const penaltiesApplied = useRef(false);
 
-    // Apply penalties on load
-    useEffect(() => {
-        if (loans.length > 0) {
+    // Apply penalties only once on first data load (not on every snapshot update)
+    React.useEffect(() => {
+        if (loans.length > 0 && !penaltiesApplied.current) {
+            penaltiesApplied.current = true;
             loans.forEach(async (loan) => {
                 try {
                     await applyPenaltyToLoan(loan);
@@ -178,6 +180,14 @@ export default function AdminDashboard() {
                 }}
                 onSuccess={() => { }}
             />
+
+            {/* Floating Action Button for Adding Borrower */}
+            <TouchableOpacity
+                style={styles.fab}
+                onPress={() => router.push('/(admin)/add-borrower')}
+            >
+                <Ionicons name="add" size={30} color={Colors.white} />
+            </TouchableOpacity>
         </View>
     );
 }
@@ -289,5 +299,21 @@ const styles = StyleSheet.create({
         fontSize: FontSize.sm,
         color: Colors.textMuted,
         textAlign: 'center',
+    },
+    fab: {
+        position: 'absolute',
+        right: Spacing.xl,
+        bottom: Spacing.xl,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: Colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: Colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 10,
+        elevation: 8,
     },
 });
